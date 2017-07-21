@@ -71,7 +71,9 @@ angular.module('grafana.directives').directive('piechartLegend', function(popove
             element: el[0],
             position: 'bottom center',
             template: '<gf-color-picker></gf-color-picker>',
+            openOn: 'hover',
             model: {
+              autoClose: true,
               series: series,
               toggleAxis: function() {},
               colorSelected: function(color) {
@@ -161,7 +163,7 @@ angular.module('grafana.directives').directive('piechartLegend', function(popove
           if (showValues && tableLayout) {
             var value = series.formatValue(series.stats[ctrl.panel.valueName]);
             if (panel.legend.values) {
-              html += '<div class="graph-legend-value">' + value + '</div>';
+              html += '<div class="graph-legend-value">' + ctrl.formatValue(value) + '</div>';
             }
             if (total) {
               var pvalue = ((value / total) * 100).toFixed(2) + '%';
