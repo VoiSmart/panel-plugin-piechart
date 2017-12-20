@@ -1,9 +1,9 @@
 'use strict';
 
-System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/kbn', 'app/core/time_series', './rendering', './legend', 'moment'], function (_export, _context) {
+System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/kbn', 'app/core/time_series', './rendering', './legend', 'moment', 'app/core/utils/file_export'], function (_export, _context) {
   "use strict";
 
-  var MetricsPanelCtrl, _, appEvents, kbn, TimeSeries, rendering, legend, moment, _createClass, PieChartCtrl;
+  var MetricsPanelCtrl, _, appEvents, kbn, TimeSeries, rendering, legend, moment, fileExport, _createClass, PieChartCtrl;
 
   function _classCallCheck(instance, Constructor) {
     if (!(instance instanceof Constructor)) {
@@ -52,6 +52,8 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/k
       legend = _legend.default;
     }, function (_moment) {
       moment = _moment.default;
+    }, function (_appCoreUtilsFile_export) {
+      fileExport = _appCoreUtilsFile_export;
     }],
     execute: function () {
       _createClass = function () {
@@ -124,6 +126,7 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/k
           _this.events.on('data-error', _this.onDataError.bind(_this));
           _this.events.on('data-snapshot-load', _this.onDataReceived.bind(_this));
           _this.events.on('init-edit-mode', _this.onInitEditMode.bind(_this));
+          _this.events.on('init-panel-actions', _this.onInitPanelActions.bind(_this));
 
           appEvents.on('graph-hover', _this.onGraphHover.bind(_this));
           return _this;
@@ -314,6 +317,43 @@ System.register(['app/plugins/sdk', 'lodash', 'app/core/core', 'app/core/utils/k
             } else {
               this.selectedSeries[serie.label] = true;
             }
+          }
+        }, {
+          key: 'onInitPanelActions',
+          value: function onInitPanelActions(actions) {
+            actions.push({ text: 'Export CSV', click: 'ctrl.exportCsv()' });
+            actions.push({ text: 'Toggle legend', click: 'ctrl.toggleLegend()' });
+          }
+        }, {
+          key: 'toggleLegend',
+          value: function toggleLegend() {
+            this.panel.legend.show = !this.panel.legend.show;
+            this.refresh();
+          }
+        }, {
+          key: 'exportCsv',
+          value: function exportCsv() {
+            var seriesList = this.series;
+
+            var text = 'sep=;\n';
+            text += 'Series;Values;Percentage\n';
+
+            var total = 0;
+            for (var i = 0; i < seriesList.length; i++) {
+              total += seriesList[i].stats[this.panel.valueName];
+            }
+
+            for (i = 0; i < seriesList.length; i++) {
+              var series = seriesList[i];
+              var value = series.formatValue(series.stats[this.panel.valueName]);
+              var pvalue = (value / total * 100).toFixed(2) + '%';
+
+              text += series.label + ';';
+              text += value + ';';
+              text += pvalue + '\n';
+            }
+
+            fileExport.saveSaveBlob(text, 'grafana_data_export.csv');
           }
         }, {
           key: 'toggleCombinedSeries',
