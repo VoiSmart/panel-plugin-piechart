@@ -1,22 +1,32 @@
 import {MetricsPanelCtrl} from 'app/plugins/sdk';
 import _ from 'lodash';
+import { appEvents } from 'app/core/core';
 import kbn from 'app/core/utils/kbn';
 import TimeSeries from 'app/core/time_series';
 import rendering from './rendering';
 import legend from './legend';
+import moment from 'moment';
 
 export class PieChartCtrl extends MetricsPanelCtrl {
 
-  constructor($scope, $injector, $rootScope) {
+  constructor($scope, $injector, $rootScope, variableSrv) {
     super($scope, $injector);
     this.$rootScope = $rootScope;
-    this.hiddenSeries = {};
+    this.variableSrv = variableSrv;
+    this.variableNames = _.map(variableSrv.variables, 'name');
+    this.selectedSeries = {};
+    this.timeBuckets = undefined;
+    this.focusedTime = undefined;
+    this.focusedBucketIndex = undefined;
 
     var panelDefaults = {
       pieType: 'pie',
       legend: {
         show: true, // disable/enable legend
         values: true
+      },
+      tooltip: {
+        show: true
       },
       links: [],
       datasource: null,
@@ -45,6 +55,18 @@ export class PieChartCtrl extends MetricsPanelCtrl {
     this.events.on('data-error', this.onDataError.bind(this));
     this.events.on('data-snapshot-load', this.onDataReceived.bind(this));
     this.events.on('init-edit-mode', this.onInitEditMode.bind(this));
+
+    appEvents.on('graph-hover', this.onGraphHover.bind(this));
+  }
+
+  onGraphHover(event) {
+    const pos = event.pos;
+    const date = moment.utc(pos.x1);
+    this.focusedTime = date.unix();
+    const index = _.findLastIndex(this.timeBuckets, t=>(t <= this.focusedTime) );
+    if (this.focusedBucketIndex != index) {
+      this.render();
+    }
   }
 
   onInitEditMode() {
@@ -70,13 +92,55 @@ export class PieChartCtrl extends MetricsPanelCtrl {
 
   onRender() {
     this.data = this.parseSeries(this.series);
+
+    if (this.panel.clickAction === 'Update variable') {
+      this.selectedSeries = {};
+
+      const variable = _.find(this.variableSrv.variables, {'name': this.panel.variableToUpdate});
+      const selected = _.map(_.filter(variable.options, {'selected': true}), 'value');
+      if (selected.constructor === Array) {
+        if (selected[0] === '$__all') {
+          // do nothing
+        } else {
+          for (let i = 0; i < selected.length; i++) {
+            this.selectedSeries[selected[i]] = true;
+          }
+        }
+      }
+    }
+  }
+
+  seriesData(serie) {
+    let data;
+    if (this.panel.valueName != 'time') {
+      data = serie.stats[this.panel.valueName]
+    } else {
+      data = serie.flotpairs[this.focusedBucketIndex][1];
+    }
+    return data;
   }
 
   parseSeries(series) {
-    return _.map(this.series, (serie, i) => {
+    if (series && series.length > 0) {
+      this.timeBuckets = _.map(
+        series[0].flotpairs,
+        arr=>moment.utc(arr[0]).unix()
+      );
+
+      let index = _.findLastIndex(this.timeBuckets, t=>(t <= this.focusedTime) );
+      if (index < 0) {
+        index = 0;
+      }
+      if (index >= this.timeBuckets.length) {
+        index = this.timeBuckets.length - 1;
+      }
+      this.focusedBucketIndex = index;
+    }
+
+    return _.map(series, (serie, i) => {
       return {
         label: serie.alias,
-        data: serie.stats[this.panel.valueName],
+        data: this.seriesData(serie),
         color: this.panel.aliasColors[serie.alias] || this.$rootScope.colors[i]
       };
     });
@@ -151,12 +215,40 @@ export class PieChartCtrl extends MetricsPanelCtrl {
   }
 
   toggleSeries(serie) {
-    if (this.hiddenSeries[serie.label]) {
-      delete this.hiddenSeries[serie.alias];
+    if (this.selectedSeries[serie.label]) {
+      delete this.selectedSeries[serie.alias];
     } else {
-      this.hiddenSeries[serie.label] = true;
+      this.selectedSeries[serie.label] = true;
     }
-    this.render();
+  }
+
+  toggleCombinedSeries(combined) {
+    for (var i = 0; i < combined.length; i++) {
+      this.toggleSeries(combined[i]);
+    }
+
+    if (this.selectedSeries[this.panel.combine.label]) {
+      delete this.selectedSeries[this.panel.combine.label];
+    } else {
+      this.selectedSeries[this.panel.combine.label] = true;
+    }
+  }
+
+  updateVariable() {
+    if (this.panel.variableToUpdate) {
+      var selectedSeries = _.keys(this.selectedSeries);
+
+      const variable = _.find(this.variableSrv.variables, {"name": this.panel.variableToUpdate});
+      variable.current.text = selectedSeries.join(' + ');
+      variable.current.value = selectedSeries;
+
+      this.variableSrv.updateOptions(variable).then(() => {
+        this.variableSrv.variableUpdated(variable).then(() => {
+          this.$scope.$emit('template-variable-value-updated');
+          this.$scope.$root.$broadcast('refresh');
+        });
+      });
+    }
   }
 }
 

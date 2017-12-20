@@ -1,57 +1,36 @@
-Use the new grafana-cli tool to install piechart-panel from the commandline:
+# Interactive pie chart for Grafana 
 
-```
-grafana-cli plugins install grafana-piechart-panel
-```
+A Grafana pie chart panel based on [grafana/piechart-panel](https://github.com/grafana/piechart-panel) with additional functionality. It focuses on interaction with other Grafana panels via template variables and internal events. 
 
-The plugin will be installed into your grafana plugins directory; the default is /var/lib/grafana/plugins if you installed the grafana package.
+## Update template variable
 
-More instructions on the cli tool can be found [here](http://docs.grafana.org/v3.0/plugins/installation/).
+You can configure the behavior of clicking on a slice and a legend entry of the chart. You can choose between updating a template variable of your Grafana dashboard or hiding a slice in a pie chart. If you choose to update a template variable, you need to choose which variable to update.
 
-You need the lastest grafana build for Grafana 3.0 to enable plugin support. You can get it here : http://grafana.org/download/builds.html
+![Piechart - Update variable - Options](dist/img/piechart-update-variable-options.png)
 
-## Alternative installation method
+When you click on a slice, it adds the label of the slice to the list of selected values of a template variable; if the slice is already in the list, it removes the label from the list. The same thing happens when you click on an entry in the legend; see demo below.
 
-It is also possible to clone this repo directly into your plugins directory.
+![Piechart - Update variable](dist/img/piechart-update-variable.gif)
 
-Afterwards restart grafana-server and the plugin should be automatically detected and used.
+## Update pie chart when receiving events from other panels
 
-```
-git clone https://github.com/grafana/piechart-panel.git
-sudo service grafana-server restart
-```
+![Piechart - Update pie chart - Metrics](dist/img/piechart-update-piechart-metrics.png)
 
+[grafana/piechart-panel](https://github.com/grafana/piechart-panel) is just a static chart. To use it, you first need to group time series by tag. Then you need to specify how to aggregate the values of each tag group using one of the aggregators: min, max, avg, current (last), and total. The panel shows the same chart unless configured with another aggregator. It does not respond to events from other panels.
 
-## Clone into a directory of your choice
+[eastcirclek/piechart-panel](https://github.com/eastcirclek/piechart-panel) allows users to draw a dynamic pie chart. While you hover over other panels that generate the graph-hover events in which time information is embedded, a dynamic pie chart catches and parses the graph-hover events, and updates itself by using a set of values for the time. To enable this dynamic pie chart, you need to configure your pie chart as follows:
 
-If the plugin is cloned to a directory that is not the default plugins directory then you need to edit your grafana.ini config file (Default location is at /etc/grafana/grafana.ini) and add this:
+![Piechart - Update pie chart - Options](dist/img/piechart-update-piechart-options.png)
 
-```ini
-[plugin.piechart]
-path = /home/your/clone/dir/piechart-panel
-```
+Below is an example of updating a dynamic pie chart by hovering over the default Grafana graph panel that generates graph-hover events.
 
-Note that if you clone it into the grafana plugins directory you do not need to add the above config option. That is only
-if you want to place the plugin in a directory outside the standard plugins directory. Be aware that grafana-server
-needs read access to the directory.
+![Piechart - Update pie chart - Options](dist/img/piechart-update-piechart.gif)
+ 
+To prevent from loading large data to your browser, you need to group time-series not only by tag but also by time as shown below:
 
-# Changelog
+![Piechart - Update pie chart - Metrics](dist/img/piechart-update-piechart-metrics2.png)
 
-## 1.1.5
+Then you'll have less frequent updates on your pie chart.
 
-* Fix for color picker in legend
-* Fix for - [Values in legend are displayed raw, not with the correct unit](https://github.com/grafana/piechart-panel/issues/51). Thanks, [@conet](https://github.com/conet)
-* Fix for - [Legend overlaps with graphs](https://github.com/grafana/piechart-panel/issues/34). Thanks, [@smalik03](https://github.com/smalik03)
-
-## 1.1.4
-* Add support for combining small slices (https://github.com/grafana/piechart-panel/pull/43)
-* Add option to show percentage in legend https://github.com/grafana/piechart-panel/pull/41
-
-## 1.0.2
-
-* Add piechart piece divider setting
-* Remove Unused code
-* Adds fontsize option for labels on graph
-* Only show the displaied piechart value in legend
-* Add possibility to pick stat to use for piechart
-
+![Piechart - Update pie chart - Options](dist/img/piechart-update-piechart2.gif)
+ 

@@ -1,6 +1,8 @@
 'use strict';
 
 System.register(['angular', 'app/core/utils/kbn', 'jquery', 'jquery.flot', 'jquery.flot.time'], function (_export, _context) {
+  "use strict";
+
   var angular, kbn, $;
   return {
     setters: [function (_angular) {
@@ -12,8 +14,6 @@ System.register(['angular', 'app/core/utils/kbn', 'jquery', 'jquery.flot', 'jque
     }, function (_jqueryFlot) {}, function (_jqueryFlotTime) {}],
     execute: function () {
       //import _ from  'lodash';
-
-
       angular.module('grafana.directives').directive('piechartLegend', function (popoverSrv, $timeout) {
         return {
           link: function link(scope, elem) {
@@ -23,13 +23,20 @@ System.register(['angular', 'app/core/utils/kbn', 'jquery', 'jquery.flot', 'jque
             var panel = ctrl.panel;
             var data;
             var seriesList;
+            var combined;
             var i;
 
             ctrl.events.on('render', function () {
               data = ctrl.series;
               if (data) {
                 for (var i in data) {
-                  data[i].color = ctrl.data[i].color;
+                  var label = ctrl.data[i].label;
+                  var color = ctrl.data[i].color;
+
+                  var serie = _.find(ctrl.series, { 'label': label });
+                  if (serie) {
+                    serie.color = color;
+                  }
                 }
                 render();
               }
@@ -42,10 +49,22 @@ System.register(['angular', 'app/core/utils/kbn', 'jquery', 'jquery.flot', 'jque
             function toggleSeries(e) {
               var el = $(e.currentTarget);
               var index = getSeriesIndexForElement(el);
-              var seriesInfo = seriesList[index];
               var scrollPosition = $($container.children('tbody')).scrollTop();
-              ctrl.toggleSeries(seriesInfo);
-              $($container.children('tbody')).scrollTop(scrollPosition);
+
+              if (index != -1) {
+                var seriesInfo = seriesList[index];
+                ctrl.toggleSeries(seriesInfo);
+              } else {
+                // when the combined slice is toggled
+                ctrl.toggleCombinedSeries(combined);
+              }
+
+              if (ctrl.panel.clickAction === 'Update variable') {
+                ctrl.updateVariable();
+              } else {
+                ctrl.render();
+                $($container.children('tbody')).scrollTop(scrollPosition);
+              }
             }
 
             function sortLegend(e) {
@@ -141,6 +160,7 @@ System.register(['angular', 'app/core/utils/kbn', 'jquery', 'jquery.flot', 'jque
               }
 
               seriesList = data;
+              combined = [];
 
               $container.empty();
 
@@ -164,7 +184,7 @@ System.register(['angular', 'app/core/utils/kbn', 'jquery', 'jquery.flot', 'jque
 
               if (panel.legend.sort) {
                 seriesList = _.sortBy(seriesList, function (series) {
-                  return series.stats[panel.legend.sort];
+                  return ctrl.seriesData(series);
                 });
                 if (panel.legend.sortDesc) {
                   seriesList = seriesList.reverse();
@@ -174,16 +194,21 @@ System.register(['angular', 'app/core/utils/kbn', 'jquery', 'jquery.flot', 'jque
               if (panel.legend.percentage) {
                 var total = 0;
                 for (i = 0; i < seriesList.length; i++) {
-                  total += seriesList[i].stats[ctrl.panel.valueName];
+                  total += ctrl.seriesData(seriesList[i]);
                 }
               }
 
-              var seriesShown = 0;
               var seriesElements = [];
 
               for (i = 0; i < seriesList.length; i++) {
                 var series = seriesList[i];
-                var seriesData = ctrl.data[i];
+                var value = ctrl.seriesData(series);
+
+                // ignore if included in 'others'
+                if (ctrl.panel.combine.threshold > value / total) {
+                  combined.push(series);
+                  continue;
+                }
 
                 // ignore empty series
                 if (panel.legend.hideEmpty && series.allIsNull) {
@@ -200,18 +225,25 @@ System.register(['angular', 'app/core/utils/kbn', 'jquery', 'jquery.flot', 'jque
                 }
 
                 var html = '<div class="graph-legend-series';
-                if (ctrl.hiddenSeries[series.alias]) {
-                  html += ' graph-legend-series-hidden';
+
+                if (ctrl.panel.clickAction === 'Update variable') {
+                  if (!ctrl.selectedSeries[series.alias]) {
+                    html += ' graph-legend-series-hidden';
+                  }
+                } else {
+                  if (ctrl.selectedSeries[series.alias]) {
+                    html += ' graph-legend-series-hidden';
+                  }
                 }
                 html += '" data-series-index="' + i + '">';
                 html += '<span class="graph-legend-icon" style="float:none;">';
-                html += '<i class="fa fa-minus pointer" style="color:' + seriesData.color + '"></i>';
+                html += '<i class="fa fa-minus pointer" style="color:' + series.color + '"></i>';
                 html += '</span>';
 
-                html += '<a class="graph-legend-alias" style="float:none;">' + seriesData.label + '</a>';
+                html += '<a class="graph-legend-alias" style="float:none;">' + series.label + '</a>';
 
                 if (showValues && tableLayout) {
-                  var value = series.stats[ctrl.panel.valueName];
+                  var value = ctrl.seriesData(series);
                   if (panel.legend.values) {
                     html += '<div class="graph-legend-value">' + ctrl.formatValue(value) + '</div>';
                   }
@@ -224,7 +256,47 @@ System.register(['angular', 'app/core/utils/kbn', 'jquery', 'jquery.flot', 'jque
                 html += '</div>';
 
                 seriesElements.push($(html));
-                seriesShown++;
+              }
+
+              if (combined.length > 0) {
+                // The color of the combined slice is that of a slice that meets either of below conditions first:
+                // - the first slice to be combined, or
+                // - the first slice whose label is in ctrl.selectedSeries
+                var labelsInOthers = _.map(combined, "label");
+                var combinedSliceColor = _.find(data, function (series) {
+                  return _.includes(labelsInOthers, series.label) || series.label in ctrl.selectedSeries;
+                }).color;
+
+                var color = combinedSliceColor;
+                var value = _.sumBy(combined, function (s) {
+                  return ctrl.seriesData(s);
+                });
+                var label = ctrl.panel.combine.label;
+
+                var html = '<div class="graph-legend-series';
+                if (ctrl.selectedSeries[label]) {
+                  html += ' graph-legend-series-hidden';
+                }
+                html += '" data-series-index="-1">'; // -1 : the combined pie
+                html += '<span class="graph-legend-icon" style="float:none;">';
+                html += '<i class="fa fa-minus pointer" style="color:' + color + '"></i>';
+                html += '</span>';
+
+                html += '<a class="graph-legend-alias" style="float:none;">' + label + '</a>';
+
+                if (showValues && tableLayout) {
+                  if (panel.legend.values) {
+                    html += '<div class="graph-legend-value">' + ctrl.formatValue(value) + '</div>';
+                  }
+                  if (total) {
+                    var pvalue = (value / total * 100).toFixed(decimal) + '%';
+                    html += '<div class="graph-legend-value">' + pvalue + '</div>';
+                  }
+                }
+
+                html += '</div>';
+
+                seriesElements.push($(html));
               }
 
               if (tableLayout) {
