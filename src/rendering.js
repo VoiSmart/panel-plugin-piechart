@@ -73,6 +73,10 @@ export default function link(scope, elem, attrs, ctrl) {
     var width = elem.width();
     var height = elem.height();
 
+    // if piechart is not in the DOM there's nothing to do
+    if (width <= 0 || height <= 0)
+      return;
+
     var size = Math.min(width, height);
 
     var plotCanvas = $('<div></div>');
